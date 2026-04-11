@@ -1,0 +1,121 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        Int      @id @default(autoincrement())
+  name      String
+  email     String   @unique
+  password  String
+  role      Role
+  createdAt DateTime @default(now())
+
+  notifications Notification[]
+  reports       DamageReport[]
+  suggestions   SiteSuggestion[]
+}
+
+model Location {
+  id        Int    @id @default(autoincrement())
+  name      String
+  latitude  Float
+  longitude Float
+
+  heritageSites HeritageSite[]
+  disasters     DisasterEvent[]
+}
+
+model HeritageSite {
+  id          Int     @id @default(autoincrement())
+  name        String
+  description String
+  status      String
+  imageUrl    String?
+  locationId  Int
+  createdBy   Int
+  officialRating Int?
+
+  location    Location         @relation(fields: [locationId], references: [id])
+  reports     DamageReport[]
+  suggestions SiteSuggestion[]
+}
+
+model DisasterEvent {
+  id          Int      @id @default(autoincrement())
+  type        String
+  description String
+  date        DateTime
+  locationId  Int
+
+  location Location @relation(fields: [locationId], references: [id])
+}
+
+model DamageReport {
+  id             Int            @id @default(autoincrement())
+  category       ReportCategory
+  details        String
+  imageUrl       String?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  userId         Int
+  heritageSiteId Int
+
+  user User         @relation(fields: [userId], references: [id])
+  site HeritageSite @relation(fields: [heritageSiteId], references: [id], onDelete: Cascade)
+
+
+  @@index([heritageSiteId])
+  @@index([category])
+}
+
+enum Role {
+  ADMIN
+  DRRM
+  HERITAGE
+  REPORTER
+  VIEWER
+}
+
+enum ReportCategory {
+  FLOOD
+  TYPHOON
+  EARTHQUAKE
+  STORM_SURGE
+  LANDSLIDE
+  FIRE
+  OTHER
+}
+
+model SiteSuggestion {
+  id        Int              @id @default(autoincrement())
+  siteId    Int
+  userId    Int
+  content   String
+  status    SuggestionStatus @default(PENDING)
+  createdAt DateTime         @default(now())
+
+  site HeritageSite @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  user User         @relation(fields: [userId], references: [id])
+}
+
+model Notification {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  message   String
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+}
+
+enum SuggestionStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
