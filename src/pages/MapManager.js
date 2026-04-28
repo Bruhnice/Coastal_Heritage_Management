@@ -15,19 +15,17 @@ import {
   PlusCircle,
   Trash2,
   Upload,
-  AlertCircle,
   FileText,
   Save,
   X,
-  CheckCircle2,
-  Loader2,
   Droplets,
   Wind,
   Globe,
   Waves,
   Mountain,
   Flame,
-  ShieldCheck, // Added for Assessment icon
+  ShieldCheck,
+  Edit3,
 } from "lucide-react";
 
 // Marker Setup
@@ -52,7 +50,6 @@ const categoryOptions = [
   { value: "OTHER", label: "Other", icon: <FileText size={14} /> },
 ];
 
-// 🔥 Safety Rating Configurations
 const safetyLevels = [
   { score: 1, label: "High Risk", color: "#ef4444" },
   { score: 2, label: "At Risk", color: "#f97316" },
@@ -79,13 +76,10 @@ export default function MapManager() {
   const [reportCategory, setReportCategory] = useState("FLOOD");
   const [reportDetails, setReportDetails] = useState("");
 
-  // New Rating State
+  const [siteReports, setSiteReports] = useState([]);
+  const [editingReportId, setEditingReportId] = useState(null);
   const [isAssessing, setIsAssessing] = useState(false);
   const [tempRating, setTempRating] = useState(null);
-
-  // feedback states
-  const [uploadingId, setUploadingId] = useState(null);
-  const [uploadSuccess, setUploadSuccess] = useState(null);
 
   const loadSites = async () => {
     try {
@@ -96,9 +90,28 @@ export default function MapManager() {
     }
   };
 
+  const loadReports = async (siteId) => {
+    try {
+      const token = localStorage.getItem("token");
+      const config = token
+        ? { headers: { Authorization: `Bearer ${token}` } }
+        : {};
+      const res = await API.get(`/reports/site/${siteId}`, config);
+      setSiteReports(res.data);
+    } catch (err) {
+      console.error("Error loading reports:", err);
+    }
+  };
+
   useEffect(() => {
     loadSites();
   }, []);
+
+  useEffect(() => {
+    if (selectedSite) {
+      loadReports(selectedSite.id);
+    }
+  }, [selectedSite]);
 
   const createSite = async () => {
     const token = localStorage.getItem("token");
@@ -133,6 +146,56 @@ export default function MapManager() {
     }
   };
 
+  const handleReportSubmit = async () => {
+    const token = localStorage.getItem("token");
+    if (!reportDetails.trim()) return alert("Please enter details.");
+
+    try {
+      if (editingReportId) {
+        await API.put(
+          `/reports/${editingReportId}`,
+          { category: reportCategory, details: reportDetails },
+          { headers: { Authorization: `Bearer ${token}` } },
+        );
+      } else {
+        await API.post(
+          "/reports",
+          {
+            heritageSiteId: selectedSite.id,
+            category: reportCategory,
+            details: reportDetails,
+          },
+          { headers: { Authorization: `Bearer ${token}` } },
+        );
+      }
+
+      setReportDetails("");
+      setEditingReportId(null);
+      loadReports(selectedSite.id);
+    } catch (err) {
+      alert("Failed to process report.");
+    }
+  };
+
+  // Fixed Delete Logic
+  const deleteReport = async (reportId) => {
+    if (!window.confirm("Are you sure you want to delete this report?")) return;
+    const token = localStorage.getItem("token");
+
+    try {
+      await API.delete(`/reports/${reportId}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      // Immediately refresh the list for the current site
+      loadReports(selectedSite.id);
+    } catch (err) {
+      console.error(err);
+      alert(
+        "Delete failed. You may not have permission to delete this report.",
+      );
+    }
+  };
+
   const handleOfficialRating = async () => {
     if (!tempRating) return alert("Select a rating score.");
     const token = localStorage.getItem("token");
@@ -147,33 +210,6 @@ export default function MapManager() {
       loadSites();
     } catch (err) {
       alert("Failed to update official rating.");
-    }
-  };
-
-  const uploadImage = async (siteId, file) => {
-    const token = localStorage.getItem("token");
-    const formData = new FormData();
-    formData.append("file", file);
-    setUploadingId(siteId);
-    try {
-      const uploadRes = await API.post("/upload", formData, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "multipart/form-data",
-        },
-      });
-      await API.put(
-        `/heritage/${siteId}`,
-        { imageUrl: uploadRes.data.url },
-        { headers: { Authorization: `Bearer ${token}` } },
-      );
-      setUploadSuccess(siteId);
-      setTimeout(() => setUploadSuccess(null), 3000);
-      loadSites();
-    } catch (err) {
-      alert("Upload failed");
-    } finally {
-      setUploadingId(null);
     }
   };
 
@@ -213,9 +249,16 @@ export default function MapManager() {
       border: "none",
       fontWeight: "600",
       cursor: "pointer",
-      transition: "0.2s",
     },
     primaryBtn: { background: "#1a5f7a", color: "#fff" },
+    reportCard: {
+      padding: "12px",
+      borderRadius: "8px",
+      background: "#f8fafc",
+      border: "1px solid #e2e8f0",
+      marginTop: "10px",
+      position: "relative",
+    },
     ratingBadge: (score) => ({
       padding: "4px 8px",
       borderRadius: "4px",
@@ -232,12 +275,10 @@ export default function MapManager() {
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap');
         .leaflet-popup-content-wrapper { font-family: 'Inter', sans-serif !important; border-radius: 12px !important; }
-        .animate-spin { animation: spin 1s linear infinite; }
-        @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+        .report-card-action:hover { opacity: 0.7; }
       `}</style>
 
       <div style={styles.sidebar}>
-        {/* SECTION 1: REGISTRATION */}
         {!selectedSite && (
           <div>
             <h2
@@ -288,7 +329,6 @@ export default function MapManager() {
           </div>
         )}
 
-        {/* SECTION 2: REPORTING OR ASSESSMENT */}
         {selectedSite && (
           <div style={{ borderTop: "2px solid #f1f5f9", paddingTop: "10px" }}>
             <div
@@ -300,12 +340,18 @@ export default function MapManager() {
               }}
             >
               <h3 style={{ fontSize: "15px", margin: 0, fontWeight: "800" }}>
-                {isAssessing ? "Official Assessment" : "Incident Report"}
+                {isAssessing
+                  ? "Official Assessment"
+                  : editingReportId
+                    ? "Edit Report"
+                    : "Incident Report"}
               </h3>
               <button
                 onClick={() => {
                   setSelectedSite(null);
                   setIsAssessing(false);
+                  setEditingReportId(null);
+                  setReportDetails("");
                 }}
                 style={{
                   border: "none",
@@ -319,7 +365,6 @@ export default function MapManager() {
             </div>
 
             {isAssessing ? (
-              /* 🔥 GUIDED ASSESSMENT FORM */
               <div
                 style={{
                   display: "flex",
@@ -328,8 +373,7 @@ export default function MapManager() {
                 }}
               >
                 <p style={{ fontSize: "12px", color: "#64748b" }}>
-                  Assign an official safety score for <b>{selectedSite.name}</b>
-                  .
+                  Assign safety score for <b>{selectedSite.name}</b>.
                 </p>
                 <div
                   style={{
@@ -352,7 +396,6 @@ export default function MapManager() {
                         background:
                           tempRating === l.score ? `${l.color}15` : "#fff",
                         cursor: "pointer",
-                        transition: "0.2s",
                       }}
                     >
                       <div style={{ fontWeight: "800", color: l.color }}>
@@ -361,20 +404,6 @@ export default function MapManager() {
                     </button>
                   ))}
                 </div>
-                {tempRating && (
-                  <p
-                    style={{
-                      fontSize: "11px",
-                      textAlign: "center",
-                      color: "#475569",
-                    }}
-                  >
-                    Status:{" "}
-                    <b>
-                      {safetyLevels.find((l) => l.score === tempRating).label}
-                    </b>
-                  </p>
-                )}
                 <button
                   onClick={handleOfficialRating}
                   style={{
@@ -387,7 +416,6 @@ export default function MapManager() {
                 </button>
               </div>
             ) : (
-              /* REGULAR INCIDENT REPORT */
               <div
                 style={{
                   display: "flex",
@@ -413,29 +441,117 @@ export default function MapManager() {
                   onChange={(e) => setReportDetails(e.target.value)}
                 />
                 <button
-                  onClick={async () => {
-                    const token = localStorage.getItem("token");
-                    await API.post(
-                      "/reports",
-                      {
-                        heritageSiteId: selectedSite.id,
-                        category: reportCategory,
-                        details: reportDetails,
-                      },
-                      { headers: { Authorization: `Bearer ${token}` } },
-                    );
-                    setReportDetails("");
-                    setSelectedSite(null);
-                    loadSites();
-                  }}
+                  onClick={handleReportSubmit}
                   style={{
                     ...styles.button,
                     background: "#0e2f3d",
                     color: "#fff",
                   }}
                 >
-                  <Save size={18} /> Submit Report
+                  <Save size={18} />{" "}
+                  {editingReportId ? "Update Changes" : "Submit Report"}
                 </button>
+                {editingReportId && (
+                  <button
+                    onClick={() => {
+                      setEditingReportId(null);
+                      setReportDetails("");
+                    }}
+                    style={{
+                      background: "none",
+                      border: "none",
+                      color: "#64748b",
+                      fontSize: "12px",
+                      cursor: "pointer",
+                    }}
+                  >
+                    Cancel Edit
+                  </button>
+                )}
+
+                <div style={{ marginTop: "20px" }}>
+                  <h4
+                    style={{
+                      fontSize: "11px",
+                      fontWeight: "800",
+                      color: "#94a3b8",
+                      textTransform: "uppercase",
+                    }}
+                  >
+                    Reports for this Site
+                  </h4>
+                  {siteReports.length === 0 && (
+                    <p style={{ fontSize: "11px", color: "#cbd5e1" }}>
+                      No reports found.
+                    </p>
+                  )}
+                  {siteReports.map((r) => (
+                    <div key={r.id} style={styles.reportCard}>
+                      <div
+                        style={{
+                          fontSize: "12px",
+                          fontWeight: "700",
+                          marginBottom: "4px",
+                        }}
+                      >
+                        {r.category}
+                      </div>
+                      <p
+                        style={{
+                          fontSize: "12px",
+                          margin: 0,
+                          color: "#475569",
+                        }}
+                      >
+                        {r.details}
+                      </p>
+                      <div
+                        style={{
+                          display: "flex",
+                          gap: "10px",
+                          marginTop: "8px",
+                        }}
+                      >
+                        <button
+                          onClick={() => {
+                            setEditingReportId(r.id);
+                            setReportDetails(r.details);
+                            setReportCategory(r.category);
+                          }}
+                          className="report-card-action"
+                          style={{
+                            background: "none",
+                            border: "none",
+                            color: "#1a5f7a",
+                            fontSize: "11px",
+                            cursor: "pointer",
+                            display: "flex",
+                            alignItems: "center",
+                            gap: "4px",
+                          }}
+                        >
+                          <Edit3 size={12} /> Edit
+                        </button>
+                        <button
+                          onClick={() => deleteReport(r.id)}
+                          className="report-card-action"
+                          style={{
+                            background: "none",
+                            border: "none",
+                            color: "#ef4444",
+                            fontSize: "11px",
+                            cursor: "pointer",
+                            display: "flex",
+                            alignItems: "center",
+                            gap: "4px",
+                          }}
+                        >
+                          <Trash2 size={12} /> Delete
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
           </div>
@@ -450,19 +566,15 @@ export default function MapManager() {
         >
           <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
           <MapClickHandler setPosition={setPosition} />
-
           {position && <Marker position={[position.lat, position.lng]} />}
-
           {sites.map((site) => {
             const lat = site.location?.latitude ?? site.location?.lat;
             const lng = site.location?.longitude ?? site.location?.lng;
             if (!lat || !lng) return null;
-
             return (
               <Marker key={site.id} position={[lat, lng]}>
                 <Popup>
                   <div style={{ minWidth: "240px" }}>
-                    {/* Site Image Header */}
                     <div
                       style={{
                         width: "100%",
@@ -491,14 +603,12 @@ export default function MapManager() {
                             alignItems: "center",
                             justifyContent: "center",
                             color: "#94a3b8",
-                            fontSize: "10px",
                           }}
                         >
                           <Upload size={20} />
                         </div>
                       )}
                     </div>
-
                     <div
                       style={{
                         display: "flex",
@@ -515,7 +625,6 @@ export default function MapManager() {
                         </div>
                       )}
                     </div>
-
                     <div
                       style={{ display: "flex", gap: "6px", margin: "10px 0" }}
                     >
@@ -558,7 +667,6 @@ export default function MapManager() {
                         Assess
                       </button>
                     </div>
-
                     <button
                       onClick={async () => {
                         if (window.confirm("Delete site?")) {

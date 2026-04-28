@@ -4,6 +4,7 @@ import {
   Marker,
   Popup,
   useMap,
+  useMapEvents, // Added for manual click detection
   CircleMarker,
 } from "react-leaflet";
 
@@ -15,11 +16,12 @@ import {
   Navigation,
   Layers,
   Map as MapIcon,
-  ShieldCheck, // Added for the official reporter badge
+  ShieldCheck,
+  LocateFixed, // Added icon for manual toggle
 } from "lucide-react";
 
 import Timeline from "./Timeline";
-import { Fragment, useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState, useCallback } from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import "leaflet-routing-machine";
@@ -38,16 +40,50 @@ L.Icon.Default.mergeOptions({
 
 const API_BASE = "http://localhost:5001";
 
-// Mapping of scores to colors for the official badge
 const ratingColors = {
-  1: "#ef4444", // Red
-  2: "#f97316", // Orange
-  3: "#eab308", // Yellow
-  4: "#84cc16", // Lime
-  5: "#22c55e", // Green
+  1: "#ef4444",
+  2: "#f97316",
+  3: "#eab308",
+  4: "#84cc16",
+  5: "#22c55e",
 };
 
-function FlyToSite({ selectedSite }) {
+/**
+ * Helper to handle manual map clicks
+ */
+function MapClickHandler({
+  isSettingLocation,
+  onLocationSet,
+  setIsSettingLocation,
+}) {
+  const map = useMap();
+
+  useEffect(() => {
+    if (isSettingLocation) {
+      map.getContainer().style.cursor = "crosshair";
+    } else {
+      map.getContainer().style.cursor = "";
+    }
+  }, [isSettingLocation, map]);
+
+  useMapEvents({
+    click: (e) => {
+      if (isSettingLocation) {
+        const { lat, lng } = e.latlng;
+        onLocationSet({
+          latitude: lat,
+          longitude: lng,
+          accuracy: 0,
+          manual: true,
+        });
+        setIsSettingLocation(false);
+      }
+    },
+  });
+  return null;
+}
+
+function FlyToSite({ selectedSite, markersRef }) {
   const map = useMap();
   useEffect(() => {
     if (!selectedSite) return;
@@ -56,7 +92,13 @@ function FlyToSite({ selectedSite }) {
     if (lat == null || lng == null) return;
     map.invalidateSize();
     setTimeout(() => map.flyTo([lat, lng], 16, { duration: 1.5 }), 250);
-  }, [selectedSite, map]);
+    setTimeout(() => {
+      const marker = markersRef.current[selectedSite.id];
+      if (marker && marker.openPopup) {
+        marker.openPopup();
+      }
+    }, 1700);
+  }, [selectedSite, map, markersRef]);
   return null;
 }
 
@@ -88,7 +130,7 @@ function RoutingManager({ destination, userLocation }) {
       addWaypoints: false,
       draggableWaypoints: false,
       showAlternatives: false,
-      lineOptions: { styles: [{ color: "blue", weight: 5 }] },
+      lineOptions: { styles: [{ color: "#3b82f6", weight: 6, opacity: 0.8 }] },
       fitSelectedRoutes: true,
       createMarker: () => null,
     }).addTo(map);
@@ -166,7 +208,6 @@ function TimelinePanel({ site, onClose }) {
             style={{
               fontSize: "12px",
               fontWeight: "600",
-              letterSpacing: "1px",
               textTransform: "uppercase",
             }}
           >
@@ -214,11 +255,46 @@ export default function MapView({ heritageSites = [], selectedSite }) {
   const [routeTo, setRouteTo] = useState(null);
   const [userLocation, setUserLocation] = useState(null);
   const [isSatellite, setIsSatellite] = useState(false);
+  const [isSettingLocation, setIsSettingLocation] = useState(false);
 
   const defaultCenter = [9.85, 124.14];
   const streetUrl = "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png";
   const satelliteUrl =
     "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}";
+
+  // Filter GPS accuracy to keep the map stable
+  const handleLocationUpdate = useCallback((pos) => {
+    if (pos.coords.accuracy > 500) return; // Ignore low accuracy (IP based)
+
+    setUserLocation({
+      latitude: pos.coords.latitude,
+      longitude: pos.coords.longitude,
+      accuracy: pos.coords.accuracy,
+      manual: false,
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!navigator.geolocation) return;
+    const options = {
+      enableHighAccuracy: true,
+      timeout: 10000,
+      maximumAge: 30000,
+    };
+
+    navigator.geolocation.getCurrentPosition(
+      handleLocationUpdate,
+      (err) => console.warn(err),
+      options,
+    );
+    const watchId = navigator.geolocation.watchPosition(
+      handleLocationUpdate,
+      (err) => console.warn(err),
+      options,
+    );
+
+    return () => navigator.geolocation.clearWatch(watchId);
+  }, [handleLocationUpdate]);
 
   const reportCounts = heritageSites.map((site) => site.reports?.length ?? 0);
   const maxReportCount = Math.max(1, ...reportCounts);
@@ -234,20 +310,6 @@ export default function MapView({ heritageSites = [], selectedSite }) {
     return `rgb(255, ${Math.round(200 - inner * 200)}, 0)`;
   };
 
-  useEffect(() => {
-    if (!navigator.geolocation) return;
-    const watchId = navigator.geolocation.watchPosition(
-      (pos) =>
-        setUserLocation({
-          latitude: pos.coords.latitude,
-          longitude: pos.coords.longitude,
-        }),
-      (err) => console.warn(err),
-      { enableHighAccuracy: true },
-    );
-    return () => navigator.geolocation.clearWatch(watchId);
-  }, []);
-
   return (
     <div
       style={{
@@ -257,30 +319,60 @@ export default function MapView({ heritageSites = [], selectedSite }) {
         overflow: "hidden",
       }}
     >
-      <button
-        onClick={() => setIsSatellite(!isSatellite)}
+      {/* MAP CONTROLS */}
+      <div
         style={{
           position: "absolute",
           top: "12px",
           left: "55px",
           zIndex: 1000,
-          padding: "8px 14px",
-          background: "#fff",
-          border: "2px solid rgba(0,0,0,0.1)",
-          borderRadius: "8px",
-          cursor: "pointer",
           display: "flex",
-          alignItems: "center",
+          flexDirection: "column",
           gap: "8px",
-          fontWeight: "700",
-          fontSize: "12px",
-          color: "#0e2f3d",
-          boxShadow: "0 4px 12px rgba(0,0,0,0.15)",
         }}
       >
-        {isSatellite ? <MapIcon size={16} /> : <Layers size={16} />}
-        {isSatellite ? "Street View" : "Satellite"}
-      </button>
+        <button
+          onClick={() => setIsSatellite(!isSatellite)}
+          style={{
+            padding: "8px 14px",
+            background: "#fff",
+            border: "2px solid rgba(0,0,0,0.1)",
+            borderRadius: "8px",
+            cursor: "pointer",
+            display: "flex",
+            alignItems: "center",
+            gap: "8px",
+            fontWeight: "700",
+            fontSize: "12px",
+            color: "#0e2f3d",
+            boxShadow: "0 4px 12px rgba(0,0,0,0.15)",
+          }}
+        >
+          {isSatellite ? <MapIcon size={16} /> : <Layers size={16} />}
+          {isSatellite ? "Street View" : "Satellite"}
+        </button>
+
+        <button
+          onClick={() => setIsSettingLocation(!isSettingLocation)}
+          style={{
+            padding: "8px 14px",
+            background: isSettingLocation ? "#3b82f6" : "#fff",
+            color: isSettingLocation ? "#fff" : "#0e2f3d",
+            border: "2px solid rgba(0,0,0,0.1)",
+            borderRadius: "8px",
+            cursor: "pointer",
+            display: "flex",
+            alignItems: "center",
+            gap: "8px",
+            fontWeight: "700",
+            fontSize: "12px",
+            boxShadow: "0 4px 12px rgba(0,0,0,0.15)",
+          }}
+        >
+          <LocateFixed size={16} />
+          {isSettingLocation ? "Click Map to Set" : "Set Location Manually"}
+        </button>
+      </div>
 
       <MapContainer
         center={defaultCenter}
@@ -291,7 +383,14 @@ export default function MapView({ heritageSites = [], selectedSite }) {
           key={isSatellite ? "sat-layer" : "street-layer"}
           url={isSatellite ? satelliteUrl : streetUrl}
         />
-        <FlyToSite selectedSite={selectedSite} />
+
+        <MapClickHandler
+          isSettingLocation={isSettingLocation}
+          onLocationSet={setUserLocation}
+          setIsSettingLocation={setIsSettingLocation}
+        />
+
+        <FlyToSite selectedSite={selectedSite} markersRef={markers} />
 
         {userLocation && (
           <Marker
@@ -301,7 +400,14 @@ export default function MapView({ heritageSites = [], selectedSite }) {
               html: `<div class="pulse-marker"></div>`,
             })}
           >
-            <Popup>You are here</Popup>
+            <Popup>
+              <strong>
+                {userLocation.manual ? "Manual Position" : "GPS Position"}
+              </strong>
+              <br />
+              {userLocation.accuracy > 0 &&
+                `Accuracy: ${Math.round(userLocation.accuracy)}m`}
+            </Popup>
           </Marker>
         )}
 
@@ -355,7 +461,6 @@ export default function MapView({ heritageSites = [], selectedSite }) {
                       fontFamily: "'Inter', sans-serif",
                     }}
                   >
-                    {/* 🔥 OFFICIAL REPORTER BADGE */}
                     {hasOfficialRating && (
                       <div
                         style={{
@@ -408,11 +513,9 @@ export default function MapView({ heritageSites = [], selectedSite }) {
                         </div>
                       </div>
                     )}
-
                     <h3 style={{ margin: "0 0 10px 0", color: "#0e2f3d" }}>
                       {site.name}
                     </h3>
-
                     <div
                       style={{
                         width: "100%",
@@ -443,7 +546,6 @@ export default function MapView({ heritageSites = [], selectedSite }) {
                         </span>
                       )}
                     </div>
-
                     <div
                       style={{
                         display: "flex",
@@ -498,7 +600,6 @@ export default function MapView({ heritageSites = [], selectedSite }) {
             </Fragment>
           );
         })}
-
         <RoutingManager destination={routeTo} userLocation={userLocation} />
       </MapContainer>
 
@@ -534,10 +635,11 @@ export default function MapView({ heritageSites = [], selectedSite }) {
       />
 
       <style>{`
-        .pulse-marker { width: 12px; height: 12px; background: rgba(0, 123, 255, 0.7); border-radius: 50%; position: relative; animation: pulse 1.5s infinite; }
-        .pulse-marker::after { content: ''; width: 24px; height: 24px; border-radius: 50%; position: absolute; top: -6px; left: -6px; background: rgba(0, 123, 255, 0.3); animation: pulse 1.5s infinite; }
+        .pulse-marker { width: 12px; height: 12px; background: #3b82f6; border: 2px solid white; border-radius: 50%; position: relative; }
+        .pulse-marker::after { content: ''; width: 24px; height: 24px; border-radius: 50%; position: absolute; top: -6px; left: -6px; background: rgba(59, 130, 246, 0.4); animation: pulse 1.5s infinite; }
         @keyframes pulse { 0% { transform: scale(0.7); opacity: 1; } 70% { transform: scale(1.5); opacity: 0; } 100% { transform: scale(1.5); opacity: 0; } }
       `}</style>
     </div>
   );
 }
+  

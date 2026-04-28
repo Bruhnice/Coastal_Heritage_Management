@@ -8,18 +8,40 @@ import {
   Calendar,
   ChevronRight,
   Circle,
+  FileText, // Added for report-specific icons
+  CheckCircle,
 } from "lucide-react";
 
 export default function NotificationsPage() {
   const [notes, setNotes] = useState([]);
 
-  useEffect(() => {
-    const token = localStorage.getItem("token");
+  const fetchNotifications = async () => {
+    try {
+      const token = localStorage.getItem("token");
+      const res = await API.get("/notifications", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setNotes(res.data);
+    } catch (err) {
+      console.error("Failed to load notifications");
+    }
+  };
 
-    API.get("/notifications", {
-      headers: { Authorization: `Bearer ${token}` },
-    }).then((res) => setNotes(res.data));
+  useEffect(() => {
+    fetchNotifications();
   }, []);
+
+  const markAsRead = async (id) => {
+    try {
+      const token = localStorage.getItem("token");
+      await API.delete(`/notifications/${id}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setNotes(notes.filter((n) => n.id !== id));
+    } catch (err) {
+      console.error("Failed to clear notification");
+    }
+  };
 
   const styles = {
     container: {
@@ -50,7 +72,7 @@ export default function NotificationsPage() {
       gap: "12px",
       maxWidth: "800px",
     },
-    notificationCard: (isUrgent) => ({
+    notificationCard: (isUrgent, isReport) => ({
       display: "flex",
       alignItems: "center",
       gap: "16px",
@@ -58,16 +80,20 @@ export default function NotificationsPage() {
       background: "#fff",
       borderRadius: "12px",
       border: "1px solid #e2e8f0",
-      borderLeft: isUrgent ? "4px solid #ef4444" : "4px solid #1a5f7a",
+      borderLeft: isUrgent
+        ? "4px solid #ef4444"
+        : isReport
+          ? "4px solid #f59e0b" // Amber for reports
+          : "4px solid #1a5f7a",
       boxShadow: "0 1px 2px rgba(0,0,0,0.05)",
       transition: "transform 0.1s ease",
       cursor: "pointer",
     }),
-    iconBox: (isUrgent) => ({
+    iconBox: (isUrgent, isReport) => ({
       padding: "10px",
       borderRadius: "10px",
-      background: isUrgent ? "#fee2e2" : "#f1f5f9",
-      color: isUrgent ? "#ef4444" : "#1a5f7a",
+      background: isUrgent ? "#fee2e2" : isReport ? "#fef3c7" : "#f1f5f9",
+      color: isUrgent ? "#ef4444" : isReport ? "#d97706" : "#1a5f7a",
       display: "flex",
       alignItems: "center",
       justifyContent: "center",
@@ -77,9 +103,21 @@ export default function NotificationsPage() {
       padding: "100px 20px",
       color: "#94a3b8",
     },
+    clearBtn: {
+      background: "none",
+      border: "none",
+      color: "#94a3b8",
+      cursor: "pointer",
+      padding: "8px",
+      borderRadius: "50%",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      transition: "0.2s",
+    },
   };
 
-  // Helper to check if the message is a disaster alert
+  // Helper to determine type and urgency
   const checkUrgency = (msg) => {
     const keywords = [
       "flood",
@@ -92,14 +130,19 @@ export default function NotificationsPage() {
     return keywords.some((word) => msg.toLowerCase().includes(word));
   };
 
+  const checkIsReport = (msg) => {
+    return (
+      msg.toLowerCase().includes("report") ||
+      msg.toLowerCase().includes("incident")
+    );
+  };
+
   return (
     <div style={styles.container}>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap');
-        .notif-card:hover {
-          transform: translateX(4px);
-          border-color: #cbd5e1;
-        }
+        .notif-card:hover { transform: translateX(4px); border-color: #cbd5e1; }
+        .clear-btn:hover { background: #fee2e2 !important; color: #ef4444 !important; }
       `}</style>
 
       <div style={styles.header}>
@@ -117,7 +160,7 @@ export default function NotificationsPage() {
               borderRadius: "20px",
             }}
           >
-            {notes.length} New Updates
+            {notes.length} Active Alerts
           </span>
         )}
       </div>
@@ -132,21 +175,29 @@ export default function NotificationsPage() {
               style={{ position: "absolute", top: 5, right: 5 }}
             />
           </div>
-          <h3 style={{ color: "#475569" }}>No updates yet</h3>
-          <p>We'll notify you when there's activity on your heritage sites.</p>
+          <h3 style={{ color: "#475569" }}>All clear!</h3>
+          <p>No new incident reports or site updates at the moment.</p>
         </div>
       ) : (
         <div style={styles.list}>
           {notes.map((n) => {
             const isUrgent = checkUrgency(n.message);
+            const isReport = checkIsReport(n.message);
+
             return (
               <div
                 key={n.id}
-                style={styles.notificationCard(isUrgent)}
+                style={styles.notificationCard(isUrgent, isReport)}
                 className="notif-card"
               >
-                <div style={styles.iconBox(isUrgent)}>
-                  {isUrgent ? <AlertTriangle size={24} /> : <Info size={24} />}
+                <div style={styles.iconBox(isUrgent, isReport)}>
+                  {isUrgent ? (
+                    <AlertTriangle size={24} />
+                  ) : isReport ? (
+                    <FileText size={24} />
+                  ) : (
+                    <Info size={24} />
+                  )}
                 </div>
 
                 <div style={{ flex: 1 }}>
@@ -156,7 +207,7 @@ export default function NotificationsPage() {
                       fontSize: "15px",
                       color: "#1e293b",
                       lineHeight: "1.4",
-                      fontWeight: isUrgent ? "600" : "400",
+                      fontWeight: isUrgent || isReport ? "600" : "400",
                     }}
                   >
                     {n.message}
@@ -172,12 +223,22 @@ export default function NotificationsPage() {
                     }}
                   >
                     <Calendar size={12} />
-                    <span>Just now</span>{" "}
-                    {/* Assuming date logic comes from n.createdAt later */}
+                    <span>
+                      {n.createdAt
+                        ? new Date(n.createdAt).toLocaleString()
+                        : "Recently"}
+                    </span>
                   </div>
                 </div>
 
-                <ChevronRight size={18} style={{ color: "#cbd5e1" }} />
+                <button
+                  onClick={() => markAsRead(n.id)}
+                  style={styles.clearBtn}
+                  className="clear-btn"
+                  title="Mark as Read"
+                >
+                  <CheckCircle size={18} />
+                </button>
               </div>
             );
           })}

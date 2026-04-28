@@ -13,6 +13,8 @@ model User {
   email     String   @unique
   password  String
   role      Role
+  isActive  Boolean  @default(false)
+  status    UserStatus @default(APPROVED)
   createdAt DateTime @default(now())
 
   notifications Notification[]
@@ -60,6 +62,7 @@ model DamageReport {
   category       ReportCategory
   details        String
   imageUrl       String?
+  status         ReportStatus   @default(PENDING)
   createdAt      DateTime       @default(now())
   updatedAt      DateTime       @updatedAt
   userId         Int
@@ -81,6 +84,12 @@ enum Role {
   VIEWER
 }
 
+enum UserStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
 enum ReportCategory {
   FLOOD
   TYPHOON
@@ -89,6 +98,12 @@ enum ReportCategory {
   LANDSLIDE
   FIRE
   OTHER
+}
+
+enum ReportStatus {
+  PENDING
+  APPROVED
+  REJECTED
 }
 
 model SiteSuggestion {
