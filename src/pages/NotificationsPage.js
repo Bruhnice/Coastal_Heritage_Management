@@ -6,13 +6,14 @@ import {
   Info,
   AlertTriangle,
   Calendar,
-  ChevronRight,
   Circle,
-  FileText, // Added for report-specific icons
+  FileText,
   CheckCircle,
+  Trash2, // Added for Clear All icon
 } from "lucide-react";
 
-export default function NotificationsPage() {
+export default function NotificationsPage({ user }) {
+  // 🔥 Receive user prop
   const [notes, setNotes] = useState([]);
 
   const fetchNotifications = async () => {
@@ -43,6 +44,39 @@ export default function NotificationsPage() {
     }
   };
 
+  // 🔥 New: Clear All Notifications
+  const clearAll = async () => {
+    if (!window.confirm("Are you sure you want to clear all notifications?"))
+      return;
+    try {
+      const token = localStorage.getItem("token");
+      await API.delete("/notifications/clear-all", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setNotes([]);
+    } catch (err) {
+      console.error("Failed to clear all notifications");
+    }
+  };
+
+  // 🔥 Restriction: If not a reporter, show an unauthorized state
+  if (user?.role !== "REPORTER") {
+    return (
+      <div
+        style={{
+          marginLeft: "260px",
+          padding: "400px 40px",
+          textAlign: "center",
+          color: "#64748b",
+        }}
+      >
+        <BellOff size={48} style={{ opacity: 0.3, marginBottom: "10px" }} />
+        <h3>Access Restricted</h3>
+        <p>Only Reporters can view and manage incident notifications.</p>
+      </div>
+    );
+  }
+
   const styles = {
     container: {
       marginLeft: "260px",
@@ -66,6 +100,20 @@ export default function NotificationsPage() {
       gap: "12px",
       margin: 0,
     },
+    clearAllBtn: {
+      display: "flex",
+      alignItems: "center",
+      gap: "8px",
+      padding: "10px 16px",
+      borderRadius: "8px",
+      backgroundColor: "#fee2e2",
+      color: "#ef4444",
+      border: "none",
+      fontWeight: "600",
+      fontSize: "14px",
+      cursor: "pointer",
+      transition: "0.2s",
+    },
     list: {
       display: "flex",
       flexDirection: "column",
@@ -83,7 +131,7 @@ export default function NotificationsPage() {
       borderLeft: isUrgent
         ? "4px solid #ef4444"
         : isReport
-          ? "4px solid #f59e0b" // Amber for reports
+          ? "4px solid #f59e0b"
           : "4px solid #1a5f7a",
       boxShadow: "0 1px 2px rgba(0,0,0,0.05)",
       transition: "transform 0.1s ease",
@@ -117,7 +165,6 @@ export default function NotificationsPage() {
     },
   };
 
-  // Helper to determine type and urgency
   const checkUrgency = (msg) => {
     const keywords = [
       "flood",
@@ -140,29 +187,40 @@ export default function NotificationsPage() {
   return (
     <div style={styles.container}>
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap');
         .notif-card:hover { transform: translateX(4px); border-color: #cbd5e1; }
         .clear-btn:hover { background: #fee2e2 !important; color: #ef4444 !important; }
+        .clear-all-btn:hover { background: #fecaca !important; }
       `}</style>
 
       <div style={styles.header}>
         <h1 style={styles.title}>
           <Bell size={32} /> Notifications
         </h1>
-        {notes.length > 0 && (
-          <span
-            style={{
-              fontSize: "13px",
-              color: "#64748b",
-              fontWeight: "600",
-              background: "#e2e8f0",
-              padding: "4px 12px",
-              borderRadius: "20px",
-            }}
-          >
-            {notes.length} Active Alerts
-          </span>
-        )}
+        <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+          {notes.length > 0 && (
+            <>
+              <button
+                onClick={clearAll}
+                style={styles.clearAllBtn}
+                className="clear-all-btn"
+              >
+                <Trash2 size={16} /> Clear All
+              </button>
+              <span
+                style={{
+                  fontSize: "13px",
+                  color: "#64748b",
+                  fontWeight: "600",
+                  background: "#e2e8f0",
+                  padding: "4px 12px",
+                  borderRadius: "20px",
+                }}
+              >
+                {notes.length} Active
+              </span>
+            </>
+          )}
+        </div>
       </div>
 
       {notes.length === 0 ? (
@@ -183,7 +241,6 @@ export default function NotificationsPage() {
           {notes.map((n) => {
             const isUrgent = checkUrgency(n.message);
             const isReport = checkIsReport(n.message);
-
             return (
               <div
                 key={n.id}
@@ -199,7 +256,6 @@ export default function NotificationsPage() {
                     <Info size={24} />
                   )}
                 </div>
-
                 <div style={{ flex: 1 }}>
                   <p
                     style={{
@@ -230,7 +286,6 @@ export default function NotificationsPage() {
                     </span>
                   </div>
                 </div>
-
                 <button
                   onClick={() => markAsRead(n.id)}
                   style={styles.clearBtn}

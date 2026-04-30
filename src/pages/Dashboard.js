@@ -18,8 +18,8 @@ export default function Dashboard() {
   const [user, setUser] = useState(null);
   const [page, setPage] = useState("home");
   const [selectedSite, setSelectedSite] = useState(null);
-  const [triggerZoom, setTriggerZoom] = useState(false); // 🔥 added
-  const [homeRefresh, setHomeRefresh] = useState(0); // 🔥 refetch trigger
+  const [triggerZoom, setTriggerZoom] = useState(false);
+  const [homeRefresh, setHomeRefresh] = useState(0);
 
   useEffect(() => {
     const token = localStorage.getItem("token");
@@ -33,35 +33,30 @@ export default function Dashboard() {
     setUser(payload);
 
     socket.on("notify", (data) => {
-      alert(`New report: ${data.description}`);
+      // Optional: Only show browser alert if user is a Reporter
+      if (payload.role === "REPORTER") {
+        alert(`New report: ${data.description}`);
+      }
     });
 
     return () => socket.off("notify");
   }, []);
 
-  const logout = () => {
-    localStorage.removeItem("token");
-    window.location.href = "/";
-  };
-
   if (!user) return null;
 
-  // 🔥 PAGE SWITCHER
   const renderPage = () => {
-    // Home page
     if (page === "home") {
       return (
         <DashboardHome
           key={homeRefresh}
           setPage={setPage}
           setSelectedSite={setSelectedSite}
-          setTriggerZoom={setTriggerZoom} // 🔥 pass setter
+          setTriggerZoom={setTriggerZoom}
           setHomeRefresh={setHomeRefresh}
         />
       );
     }
 
-    // Site details page
     if (page === "viewSite") {
       return (
         <SiteDetails
@@ -72,28 +67,24 @@ export default function Dashboard() {
       );
     }
 
-    // Map manager
     if (page === "manage") return <MapManager />;
 
-    // Map page
     if (page === "map") {
       return (
         <MapPage
           selectedSite={selectedSite}
-          triggerZoom={triggerZoom} // 🔥 pass triggerZoom
-          onZoomComplete={() => setTriggerZoom(false)} // 🔥 reset after zoom
-          onImageUpload={() => setHomeRefresh((prev) => prev + 1)} // 🔥 refetch home when image uploaded
+          triggerZoom={triggerZoom}
+          onZoomComplete={() => setTriggerZoom(false)}
+          onImageUpload={() => setHomeRefresh((prev) => prev + 1)}
         />
       );
     }
 
-    // Suggestions
     if (page === "suggestions") return <SuggestionsPage />;
 
-    // Notifications
-    if (page === "notifications") return <NotificationsPage />;
+    // 🔥 Pass user prop to NotificationsPage
+    if (page === "notifications") return <NotificationsPage user={user} />;
 
-    // Reports approval
     if (page === "reportApproval") return <ReportsApprovalPage />;
 
     // Role-based fallback dashboards
@@ -104,12 +95,12 @@ export default function Dashboard() {
   };
 
   return (
-    <div style={{ display: "flex" }}>
+    <div style={{ display: "flex", position: "relative" }}>
       <Sidebar
         user={user}
         setPage={setPage}
+        currentPage={page} // 🔥 Pass current page for active styling
         setSelectedSite={setSelectedSite}
-        logout={logout}
       />
 
       <div style={{ flex: 1, padding: "20px" }}>{renderPage()}</div>

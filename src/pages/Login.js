@@ -235,7 +235,6 @@ export default function Login() {
 
       <div style={styles.card}>
         <h2 style={styles.header}>Coastal Heritage</h2>
-        <p style={styles.subtext}>ICPE 3 MARITIME PORTAL</p>
 
         <div
           style={{
@@ -341,7 +340,7 @@ export default function Login() {
               value={role}
             >
               <option value="VIEWER">User</option>
-              <option value="REPORTER">Reporter</option>
+              <option value="REPORTER">Reporter (Requires admin approval) </option>
             </select>
           </div>
         )}

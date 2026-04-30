@@ -29,7 +29,6 @@ model Location {
   longitude Float
 
   heritageSites HeritageSite[]
-  disasters     DisasterEvent[]
 }
 
 model HeritageSite {
@@ -47,16 +46,6 @@ model HeritageSite {
   suggestions SiteSuggestion[]
 }
 
-model DisasterEvent {
-  id          Int      @id @default(autoincrement())
-  type        String
-  description String
-  date        DateTime
-  locationId  Int
-
-  location Location @relation(fields: [locationId], references: [id])
-}
-
 model DamageReport {
   id             Int            @id @default(autoincrement())
   category       ReportCategory
@@ -70,7 +59,6 @@ model DamageReport {
 
   user User         @relation(fields: [userId], references: [id])
   site HeritageSite @relation(fields: [heritageSiteId], references: [id], onDelete: Cascade)
-
 
   @@index([heritageSiteId])
   @@index([category])
